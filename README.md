@@ -8,12 +8,14 @@ Built for **Google Solution Challenge**.
 
 ## What It Does
 
-- **Live weather station** — ESP32 sensors (temperature, humidity, soil moisture, UV, PM2.5) transmit via LoRa to a Raspberry Pi gateway, ingested into PostgreSQL in real time
+- **Live weather station** — ESP32 sensors (temperature, humidity, soil moisture, UV, PM2.5) transmit via LoRa to an Arduino Q gateway, ingested into PostgreSQL in real time
+- **Edge AI inference** — Arduino Q (Qualcomm MPU + STM32 MCU) runs on-device sensor fusion, anomaly detection, and rain prediction at the gateway, before data reaches the cloud
 - **AI farm advisor** — multi-agent system powered by Groq (Llama 3.1) gives crop recommendations, irrigation schedules, pest alerts, and soil analysis based on live sensor data
 - **Mandi rates** — live commodity prices from data.gov.in with 30-minute caching, MSP history, and buyer matching
 - **Multilingual Mobile App** — a cross-platform Flutter application providing field-ready telemetry charts, mandi price lookups, AI advisors, scheme recommendations, and hands-free voice control
 - **Voice interaction** — farmers can call in via Vapi.ai or WhatsApp (Twilio) and get AI responses in Hindi/regional languages via Sarvam AI TTS
-- **FPGA acceleration** — Xilinx ZC706 board runs HLS-synthesized sensor fusion and rain prediction; falls back to software simulation when hardware isn't connected
+- **FPGA acceleration** — Xilinx ZC706 board runs HLS-synthesized sensor fusion and rain prediction; falls back to edge AI or software simulation
+- **Offline resilience** — Arduino Q buffers sensor data locally during connectivity loss and batch-uploads when back online
 - **Government schemes** — AI-curated scheme recommendations based on farmer profile (land size, location, crops)
 
 ---
@@ -169,6 +171,11 @@ All routes are documented interactively at `/docs` (Swagger UI) when the server 
 | FPGA | POST | `/api/fpga/fusion` | Sensor fusion computation |
 | FPGA | POST | `/api/fpga/rain-predict` | Rain probability prediction |
 | FPGA | POST | `/api/fpga/combined-analysis` | Full combined analysis |
+| Edge AI | GET | `/api/edge/status` | Arduino Q gateway connectivity |
+| Edge AI | GET | `/api/edge/health` | Detailed gateway health |
+| Edge AI | GET | `/api/edge/data-quality` | Data quality analytics |
+| Edge AI | POST | `/api/edge/alert-thresholds` | Push alert config to Arduino Q MCU |
+| Sensors | POST | `/api/sensors/data/batch` | Batch ingest (store-and-forward) |
 | Webhooks | GET | `/webhook/whatsapp` | Twilio verification handshake |
 | Webhooks | POST | `/webhook/whatsapp` | Inbound WhatsApp message handler |
 | Admin | GET | `/admin/tables` | List all DB tables |
@@ -194,6 +201,10 @@ Copy `.env.example` to `.env` and fill in:
 | `TWILIO_WHATSAPP_NUMBER` | Optional | Twilio WhatsApp sender number |
 | `ENABLE_FPGA` | No | `True` only when ZC706 board is physically connected |
 | `FPGA_PORT` | No | Serial port for FPGA bridge (`/dev/ttyUSB0` or `COM4`) |
+| `ENABLE_EDGE_AI` | No | `True` when Arduino Q gateway is connected |
+| `ARDUINO_Q_HOST` | No | Arduino Q hostname (default: `arduinoq.local`) |
+| `ARDUINO_Q_PORT` | No | Arduino Q status server port (default: `8080`) |
+| `EDGE_ALERT_THRESHOLDS` | No | JSON thresholds for MCU real-time alerts |
 | `MQTT_BROKER` | No | MQTT broker host (default: `localhost`) |
 | `STATION_ID` | No | Default station ID (default: `WS01`) |
 
@@ -215,7 +226,7 @@ python test_all_routes.py
 
 ## Sending Sensor Data
 
-### From hardware (ESP32 → RPi → HTTP)
+### From hardware (ESP32 → Arduino Q → HTTP)
 
 ```json
 POST /api/sensors/data
@@ -228,9 +239,22 @@ POST /api/sensors/data
   "soil": {"t": 27.0, "m": 52.0},
   "air": {"pm25": 55.0, "pm10": 110.0},
   "rad": {"uv": 4.0, "lux": 35000.0},
-  "pwr": {"bat": 3.8, "sol": 5.1}
+  "pwr": {"bat": 3.8, "sol": 5.1},
+  "edge_ai": {
+    "fusion_score": 72,
+    "stress_index": 35,
+    "rain_probability": 0.42,
+    "model_version": "v1.2",
+    "inference_ms": 12
+  },
+  "edge_flags": {
+    "anomaly_score": 0.08,
+    "data_quality": "good"
+  }
 }
 ```
+
+> **Note:** The `edge_ai` and `edge_flags` fields are optional. Legacy payloads without them still work. The Arduino Q gateway adds these when edge AI models are deployed.
 
 ### Flat format (scripts / testing)
 
@@ -292,6 +316,7 @@ _register("skyview.api.my_feature_routes")
 | AI / LLM | Groq API (Llama 3.1-8b-instant), multi-key load balancing |
 | Database | PostgreSQL 16 (production), SQLite (dev fallback) |
 | IoT | ESP32, LoRa, MQTT (Eclipse Mosquitto) |
+| Edge AI Gateway | Arduino Q (Qualcomm MPU + STM32 MCU), TFLite on-device inference |
 | FPGA | Xilinx ZC706, Vivado HLS, Verilog RTL, AXI4-Lite |
 | Voice | Vapi.ai (calls), Sarvam AI (TTS + translation), Twilio (WhatsApp) |
 | Frontend | React 18, Vite, TypeScript, Tailwind CSS, Recharts |

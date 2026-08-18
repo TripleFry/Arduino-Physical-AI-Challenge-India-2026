@@ -62,6 +62,14 @@ CREATE TABLE IF NOT EXISTS weather_data (
     lux FLOAT,
     battery_voltage FLOAT,
     solar_voltage FLOAT,
+    -- Edge AI fields (Arduino Q on-device inference)
+    data_quality VARCHAR(20) DEFAULT 'unknown',
+    edge_fusion_score FLOAT,
+    edge_stress_index FLOAT,
+    edge_rain_prob FLOAT,
+    edge_anomaly_score FLOAT,
+    edge_model_version VARCHAR(50),
+    edge_inference_ms INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

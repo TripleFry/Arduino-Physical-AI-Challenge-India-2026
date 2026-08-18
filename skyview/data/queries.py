@@ -17,7 +17,10 @@ def get_latest_weather(station_id: str) -> Optional[Dict[str, Any]]:
                wind_speed, wind_direction, rainfall,
                soil_temperature, soil_moisture,
                pm25, pm10, uv_index, lux,
-               battery_voltage, solar_voltage
+               battery_voltage, solar_voltage,
+               data_quality, edge_fusion_score, edge_stress_index,
+               edge_rain_prob, edge_anomaly_score,
+               edge_model_version, edge_inference_ms
         FROM weather_data
         WHERE station_id = :sid
         ORDER BY timestamp DESC LIMIT 1
@@ -33,16 +36,22 @@ def get_latest_weather(station_id: str) -> Optional[Dict[str, Any]]:
         "soil_temperature", "soil_moisture",
         "pm25", "pm10", "uv_index", "lux",
         "battery_voltage", "solar_voltage",
+        "data_quality", "edge_fusion_score", "edge_stress_index",
+        "edge_rain_prob", "edge_anomaly_score",
+        "edge_model_version", "edge_inference_ms",
     ]
     result = {}
+    str_fields = {"station_id", "wind_direction", "timestamp", "data_quality", "edge_model_version"}
     for i, k in enumerate(keys):
         val = r[i]
         if k == "timestamp" and val:
             result[k] = val.isoformat() if hasattr(val, "isoformat") else str(val)
-        elif isinstance(val, float) or (val is not None and k not in ("station_id", "wind_direction", "timestamp")):
-            result[k] = float(val) if val is not None else None
-        else:
+        elif k in str_fields:
             result[k] = val
+        elif val is not None:
+            result[k] = float(val) if not isinstance(val, int) else val
+        else:
+            result[k] = None
     return result
 
 
@@ -104,3 +113,31 @@ def get_recent_alerts(station_id: Optional[str] = None, limit: int = 20) -> List
         }
         for r in (rows or [])
     ]
+
+
+def get_edge_ai_latest(station_id: str) -> Optional[Dict[str, Any]]:
+    """Get the latest edge AI inference results for a station."""
+    rows = execute_query(
+        """
+        SELECT edge_fusion_score, edge_stress_index, edge_rain_prob,
+               edge_anomaly_score, edge_model_version, edge_inference_ms,
+               data_quality, timestamp
+        FROM weather_data
+        WHERE station_id = :sid AND edge_fusion_score IS NOT NULL
+        ORDER BY timestamp DESC LIMIT 1
+        """,
+        {"sid": station_id},
+    )
+    if not rows:
+        return None
+    r = rows[0]
+    return {
+        "fusion_score": float(r[0]) if r[0] else None,
+        "stress_index": float(r[1]) if r[1] else None,
+        "rain_probability": float(r[2]) if r[2] else None,
+        "anomaly_score": float(r[3]) if r[3] else None,
+        "model_version": r[4],
+        "inference_ms": r[5],
+        "data_quality": r[6],
+        "timestamp": r[7].isoformat() if r[7] and hasattr(r[7], "isoformat") else str(r[7]),
+    }

@@ -99,6 +99,15 @@ class Settings:
         self.FPGA_PORT: str = os.getenv("FPGA_PORT", "COM4")
         self.ENABLE_LLM_WORKFLOW: bool = os.getenv("ENABLE_LLM_WORKFLOW", "True").lower() == "true"
 
+        # ==================== EDGE AI (Arduino Q) ====================
+        self.ENABLE_EDGE_AI: bool = os.getenv("ENABLE_EDGE_AI", "False").lower() == "true"
+        self.ARDUINO_Q_HOST: str = os.getenv("ARDUINO_Q_HOST", "arduinoq.local")
+        self.ARDUINO_Q_PORT: int = int(os.getenv("ARDUINO_Q_PORT", "8080"))
+        self.EDGE_ALERT_THRESHOLDS: str = os.getenv(
+            "EDGE_ALERT_THRESHOLDS",
+            '{"soil_moisture_min":15,"temp_max":45,"pm25_max":300,"humidity_min":20}'
+        )
+
     def get_database_url(self) -> str:
         """Get the database URL, with fallback to SQLite if PostgreSQL is not configured."""
         if self.DATABASE_URL:

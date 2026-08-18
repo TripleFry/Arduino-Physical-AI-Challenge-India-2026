@@ -14,14 +14,14 @@ from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from skyview.agents.fpga_agent import get_fpga_bridge, is_real_hardware
+from skyview.agents.fpga_agent import get_fpga_bridge, is_real_hardware, is_edge_ai
 from skyview.utils.llm_pool import invoke_llm
 from skyview.utils.logger import get_logger
 
 router = APIRouter(prefix="/api/fpga", tags=["FPGA"])
 logger = get_logger(__name__)
 
-_HW_MODE = lambda: "real_hardware"
+_HW_MODE = lambda: "edge_ai" if is_edge_ai() else "real_hardware"
 
 
 class FusionInput(BaseModel):

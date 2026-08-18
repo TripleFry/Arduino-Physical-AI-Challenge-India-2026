@@ -55,8 +55,10 @@ Modify `VITE_STATION_ID` to connect to different weather stations.
 ## Data Flow
 
 ```
-Raspberry Pi (LoRa) 
+ESP32 + Sensors (LoRa)
     ↓
+Arduino Q Gateway (Edge AI inference)
+    ↓ (+ edge_ai / edge_flags)
 FastAPI Backend (localhost:8000/api/sensors/)
     ↓
 React Frontend (localhost:5173)

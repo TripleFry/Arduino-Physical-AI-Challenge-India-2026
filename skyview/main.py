@@ -78,6 +78,27 @@ def on_startup():
     except Exception as exc:
         logger.warning("Users table check: %s", exc)
 
+    # Add edge AI columns to weather_data if they don't exist (Arduino Q support)
+    try:
+        db = get_session()
+        for col, col_type in [
+            ("data_quality", "VARCHAR(20) DEFAULT 'unknown'"),
+            ("edge_fusion_score", "FLOAT"),
+            ("edge_stress_index", "FLOAT"),
+            ("edge_rain_prob", "FLOAT"),
+            ("edge_anomaly_score", "FLOAT"),
+            ("edge_model_version", "VARCHAR(50)"),
+            ("edge_inference_ms", "INTEGER"),
+        ]:
+            try:
+                db.execute(text(f"ALTER TABLE weather_data ADD COLUMN IF NOT EXISTS {col} {col_type}"))
+                db.commit()
+            except Exception:
+                db.rollback()
+        db.close()
+    except Exception as exc:
+        logger.warning("Edge AI column migration: %s", exc)
+
 
 # ── Router registration ───────────────────────────────────────────────────────
 
@@ -127,6 +148,9 @@ _register("skyview.api.profile_routes")
 
 # Marketplace matching
 _register("skyview.api.marketplace_routes")
+
+# Edge AI (Arduino Q gateway)
+_register("skyview.api.edge_routes")
 
 # Admin panel
 _register("skyview.admin.admin_routes")

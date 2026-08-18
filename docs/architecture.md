@@ -9,11 +9,13 @@
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        FIELD LAYER                              │
-│   ESP32 + Sensors  ──LoRa──►  Raspberry Pi Gateway             │
-│   (temp, humidity, soil,                                        │
-│    pressure, UV, PM2.5)                                         │
+│   ESP32 + Sensors  ──LoRa──►  Arduino Q Gateway                │
+│   (temp, humidity, soil,       ├─ MPU: TFLite sensor fusion     │
+│    pressure, UV, PM2.5)        ├─ MPU: Anomaly detection        │
+│                                ├─ MPU: Store-and-forward queue  │
+│                                └─ MCU: Real-time alert triggers │
 └──────────────────────────┬──────────────────────────────────────┘
-                           │  HTTP POST  /  MQTT
+                           │  HTTP POST (+ edge_ai fields) / MQTT
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      INGESTION LAYER                            │
@@ -106,6 +108,12 @@
 │               GET  /admin/analytics/sensors                     │
 │               GET  /admin/analytics/llm                         │
 │               GET  /admin/analytics/mandi                       │
+│                                                                 │
+│  Edge AI      GET  /api/edge/status         ← gateway check     │
+│               GET  /api/edge/health         ← detailed health   │
+│               GET  /api/edge/data-quality   ← quality analytics │
+│               POST /api/edge/alert-thresholds ← push to MCU    │
+│               POST /api/sensors/data/batch  ← store-and-forward │
 └──────────────────────────┬──────────────────────────────────────┘
                            │  JSON / REST
                            ▼
@@ -169,6 +177,7 @@
 | `marketplace_routes.py` | `/api/marketplace` | `/match` |
 | `voice_routes.py` | — | vapi/call, speech/synthesize, translate, profile/voice-update |
 | `fpga_routes.py` | `/api/fpga` | status, fusion, rain-predict, combined-analysis, test |
+| `edge_routes.py` | `/api/edge` | status, health, data-quality, alert-thresholds |
 | `webhook_routes.py` | `/webhook` | whatsapp GET/POST, whatsapp/farm-qa |
 
 ### `skyview/agents/`

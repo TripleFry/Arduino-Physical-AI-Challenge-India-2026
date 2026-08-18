@@ -65,6 +65,14 @@ class TrendsStoreReq(BaseModel):
 
 def _insert_weather(params: dict) -> bool:
     from sqlalchemy import text
+    # Ensure edge AI fields have defaults
+    params.setdefault("data_quality", "unknown")
+    params.setdefault("edge_fusion", None)
+    params.setdefault("edge_stress", None)
+    params.setdefault("edge_rain", None)
+    params.setdefault("edge_anomaly", None)
+    params.setdefault("edge_model", None)
+    params.setdefault("edge_ms", None)
     return execute_update(
         text("""
             INSERT INTO weather_data (
@@ -73,11 +81,17 @@ def _insert_weather(params: dict) -> bool:
                 wind_speed, wind_direction, rainfall,
                 soil_temperature, soil_moisture,
                 pm25, pm10, uv_index, lux,
-                battery_voltage, solar_voltage
+                battery_voltage, solar_voltage,
+                data_quality, edge_fusion_score, edge_stress_index,
+                edge_rain_prob, edge_anomaly_score,
+                edge_model_version, edge_inference_ms
             ) VALUES (
                 :sid, :ts, :temp, :hum, :pres,
                 :ws, :wd, :rain,
-                :st, :sm, :pm25, :pm10, :uv, :lux, :bat, :sol
+                :st, :sm, :pm25, :pm10, :uv, :lux, :bat, :sol,
+                :data_quality, :edge_fusion, :edge_stress,
+                :edge_rain, :edge_anomaly,
+                :edge_model, :edge_ms
             )
         """),
         params,
@@ -133,6 +147,19 @@ async def ingest_sensor_data_nested(request: Request):
     except Exception:
         return {"status": "error", "message": "Invalid JSON body"}
 
+    # ── Extract edge AI fields (Arduino Q on-device inference) ─
+    edge_ai = data.get("edge_ai", {})
+    edge_flags = data.get("edge_flags", {})
+    edge_params = {
+        "data_quality": edge_flags.get("data_quality", "unknown"),
+        "edge_fusion": edge_ai.get("fusion_score"),
+        "edge_stress": edge_ai.get("stress_index"),
+        "edge_rain": edge_ai.get("rain_probability"),
+        "edge_anomaly": edge_flags.get("anomaly_score"),
+        "edge_model": edge_ai.get("model_version"),
+        "edge_ms": edge_ai.get("inference_ms"),
+    }
+
     # ── Flat format (station_id + flat fields) ────────────────
     if "station_id" in data and "temperature" in data:
         ts = datetime.utcnow()
@@ -145,6 +172,7 @@ async def ingest_sensor_data_nested(request: Request):
             "pm25": data.get("pm25"), "pm10": data.get("pm10"),
             "uv": data.get("uv_index"), "lux": data.get("lux"),
             "bat": data.get("battery_voltage"), "sol": data.get("solar_voltage"),
+            **edge_params,
         })
         return {"status": "success" if success else "db_error",
                 "station_id": data.get("station_id"), "timestamp": ts.isoformat()}
@@ -173,13 +201,16 @@ async def ingest_sensor_data_nested(request: Request):
         "pm25": air.get("pm25"), "pm10": air.get("pm10"),
         "uv": rad.get("uv"), "lux": rad.get("lux"),
         "bat": pwr.get("bat"), "sol": pwr.get("sol"),
+        **edge_params,
     })
 
-    logger.info("Hardware data received from %s at %s", station_id, ts)
+    logger.info("Hardware data received from %s at %s (quality=%s)",
+                station_id, ts, edge_params.get("data_quality", "unknown"))
     return {
         "status": "success" if success else "db_error",
         "station_id": station_id,
         "timestamp": ts.isoformat(),
+        "edge_ai": bool(edge_ai),
     }
 
 
@@ -197,3 +228,88 @@ async def store_trends(req: TrendsStoreReq):
         "period": req.period,
         "message": "Trends snapshot acknowledged",
     }
+
+
+@router.post("/data/batch")
+async def ingest_batch(request: Request):
+    """
+    Batch ingestion endpoint for Arduino Q store-and-forward.
+    Accepts an array of readings buffered during offline periods.
+    Body: { "readings": [ {nested or flat format}, ... ] }
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return {"status": "error", "message": "Invalid JSON body"}
+
+    readings = body.get("readings", [])
+    if not isinstance(readings, list) or not readings:
+        return {"status": "error", "message": "'readings' must be a non-empty array"}
+
+    results = {"total": len(readings), "success": 0, "failed": 0, "errors": []}
+
+    for idx, reading in enumerate(readings):
+        try:
+            # Extract edge AI fields
+            edge_ai = reading.get("edge_ai", {})
+            edge_flags = reading.get("edge_flags", {})
+            edge_params = {
+                "data_quality": edge_flags.get("data_quality", "unknown"),
+                "edge_fusion": edge_ai.get("fusion_score"),
+                "edge_stress": edge_ai.get("stress_index"),
+                "edge_rain": edge_ai.get("rain_probability"),
+                "edge_anomaly": edge_flags.get("anomaly_score"),
+                "edge_model": edge_ai.get("model_version"),
+                "edge_ms": edge_ai.get("inference_ms"),
+            }
+
+            # Flat format
+            if "station_id" in reading and "temperature" in reading:
+                ts = datetime.utcnow()
+                ok = _insert_weather({
+                    "sid": reading.get("station_id", "UNKNOWN"), "ts": ts,
+                    "temp": reading.get("temperature"), "hum": reading.get("humidity"),
+                    "pres": reading.get("pressure"), "ws": reading.get("wind_speed"),
+                    "wd": reading.get("wind_direction"), "rain": reading.get("rainfall", 0.0),
+                    "st": reading.get("soil_temperature"), "sm": reading.get("soil_moisture"),
+                    "pm25": reading.get("pm25"), "pm10": reading.get("pm10"),
+                    "uv": reading.get("uv_index"), "lux": reading.get("lux"),
+                    "bat": reading.get("battery_voltage"), "sol": reading.get("solar_voltage"),
+                    **edge_params,
+                })
+            # Nested format
+            elif "id" in reading and "env" in reading:
+                ts = datetime.fromtimestamp(reading.get("ts", 0))
+                env = reading.get("env", {})
+                wind = reading.get("wind", {})
+                soil = reading.get("soil", {})
+                air = reading.get("air", {})
+                rad = reading.get("rad", {})
+                pwr = reading.get("pwr", {})
+                ok = _insert_weather({
+                    "sid": reading.get("id", "UNKNOWN"), "ts": ts,
+                    "temp": env.get("t"), "hum": env.get("h"), "pres": env.get("p"),
+                    "ws": wind.get("s"), "wd": wind.get("d"),
+                    "rain": reading.get("rain", 0.0),
+                    "st": soil.get("t"), "sm": soil.get("m"),
+                    "pm25": air.get("pm25"), "pm10": air.get("pm10"),
+                    "uv": rad.get("uv"), "lux": rad.get("lux"),
+                    "bat": pwr.get("bat"), "sol": pwr.get("sol"),
+                    **edge_params,
+                })
+            else:
+                results["failed"] += 1
+                results["errors"].append({"index": idx, "error": "Unrecognized format"})
+                continue
+
+            if ok:
+                results["success"] += 1
+            else:
+                results["failed"] += 1
+                results["errors"].append({"index": idx, "error": "DB insert failed"})
+        except Exception as exc:
+            results["failed"] += 1
+            results["errors"].append({"index": idx, "error": str(exc)})
+
+    logger.info("Batch ingest: %d/%d success", results["success"], results["total"])
+    return {"status": "success" if results["failed"] == 0 else "partial", **results}

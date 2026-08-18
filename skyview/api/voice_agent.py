@@ -23,7 +23,7 @@ from skyview.api.profile_routes import FALLBACK_SCHEMES
 from skyview.data.db import get_session
 from skyview.data.queries import get_latest_weather
 from skyview.utils.config import get_settings
-from skyview.utils.llm_pool import invoke_llm
+from skyview.agents.edge_ai_agent import invoke_llm_edge_first
 from skyview.utils.logger import get_logger
 
 router = APIRouter(prefix="/api/voice", tags=["Voice Agent"])
@@ -136,7 +136,7 @@ async def _classify_intent(message: str) -> dict[str, Any]:
         ("human", f'Query: "{message}"'),
     ]
 
-    raw = await invoke_llm(prompt, temperature=0.0, timeout=8, retries=1)
+    raw = await invoke_llm_edge_first(prompt, temperature=0.0, timeout=8, retries=1)
     parsed = _clean_json(raw) if raw else None
     if not parsed:
         return local_intent
@@ -296,7 +296,7 @@ async def _orchestrate(message: str, language: str, phone: str | None, station_i
         ),
         ("human", f'Farmer asked: "{message}"\n\nTool results:\n{context}'),
     ]
-    final_text = await invoke_llm(prompt, temperature=0.3, timeout=12, retries=1)
+    final_text = await invoke_llm_edge_first(prompt, temperature=0.3, timeout=12, retries=1)
     yield ("__done__", final_text or fallback_text)
 
 

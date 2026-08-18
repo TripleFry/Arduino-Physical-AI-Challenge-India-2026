@@ -65,7 +65,7 @@ class TrendsStoreReq(BaseModel):
 
 def _insert_weather(params: dict) -> bool:
     from sqlalchemy import text
-    # Ensure edge AI fields have defaults
+    # Ensure FPGA hardware acceleration fields have defaults
     params.setdefault("data_quality", "unknown")
     params.setdefault("edge_fusion", None)
     params.setdefault("edge_stress", None)
@@ -147,7 +147,7 @@ async def ingest_sensor_data_nested(request: Request):
     except Exception:
         return {"status": "error", "message": "Invalid JSON body"}
 
-    # ── Extract edge AI fields (Arduino Q on-device inference) ─
+    # ── Extract FPGA hardware results (sensor fusion + rain prediction via UART) ─
     edge_ai = data.get("edge_ai", {})
     edge_flags = data.get("edge_flags", {})
     edge_params = {
@@ -204,13 +204,14 @@ async def ingest_sensor_data_nested(request: Request):
         **edge_params,
     })
 
-    logger.info("Hardware data received from %s at %s (quality=%s)",
-                station_id, ts, edge_params.get("data_quality", "unknown"))
+    logger.info("Hardware data received from %s at %s (quality=%s, fpga=%s)",
+                station_id, ts, edge_params.get("data_quality", "unknown"),
+                bool(edge_ai))
     return {
         "status": "success" if success else "db_error",
         "station_id": station_id,
         "timestamp": ts.isoformat(),
-        "edge_ai": bool(edge_ai),
+        "fpga_results": bool(edge_ai),
     }
 
 
@@ -250,7 +251,7 @@ async def ingest_batch(request: Request):
 
     for idx, reading in enumerate(readings):
         try:
-            # Extract edge AI fields
+            # Extract FPGA hardware results
             edge_ai = reading.get("edge_ai", {})
             edge_flags = reading.get("edge_flags", {})
             edge_params = {

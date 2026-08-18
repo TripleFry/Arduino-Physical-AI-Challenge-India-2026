@@ -2,13 +2,17 @@
 Agent Orchestrator — Supervisor pattern.
 Routes queries to the right specialist agent based on message intent.
 Each agent is a pure async function; the supervisor coordinates them.
+
+All agents run on the Arduino Q's Qualcomm MPU via the on-device LLM.
+Falls back to cloud Groq API when the Arduino Q is unreachable.
+FPGA sensor fusion + rain prediction results are injected as context.
 """
 
 import json
 import logging
 from typing import Any, Dict, Optional
 
-from skyview.utils.llm_pool import invoke_llm
+from skyview.agents.edge_ai_agent import invoke_llm_edge_first
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +39,9 @@ def detect_intent(message: str) -> str:
 
 
 # ── Specialist agents ─────────────────────────────────────────────────────────
+# All agents use invoke_llm_edge_first() which routes:
+#   1. Arduino Q on-device LLM (Qualcomm MPU) — primary
+#   2. Cloud Groq API — fallback
 
 async def weather_agent(message: str, sensor_context: str) -> str:
     system = (
@@ -43,8 +50,8 @@ async def weather_agent(message: str, sensor_context: str) -> str:
         "Be concise and farmer-friendly."
     )
     prompt = f"{system}\n\nSensor Context:\n{sensor_context}\n\nFarmer query: {message}"
-    return await invoke_llm(
-        [("user", prompt)], temperature=0.2, timeout=20
+    return await invoke_llm_edge_first(
+        [("user", prompt)], temperature=0.2, timeout=20, include_fpga_context=True
     ) or "Unable to fetch weather analysis."
 
 
@@ -55,8 +62,8 @@ async def farm_agent(message: str, sensor_context: str) -> str:
         "Mention exact values. Be warm and practical."
     )
     prompt = f"{system}\n\nLive Sensor Data:\n{sensor_context}\n\nQuestion: {message}"
-    return await invoke_llm(
-        [("user", prompt)], temperature=0.3, timeout=20
+    return await invoke_llm_edge_first(
+        [("user", prompt)], temperature=0.3, timeout=20, include_fpga_context=True
     ) or "Unable to generate farm advice."
 
 
@@ -67,8 +74,8 @@ async def alert_agent(message: str, sensor_context: str) -> str:
         "Give one clear action item."
     )
     prompt = f"{system}\n\nData:\n{sensor_context}\n\nQuery: {message}"
-    return await invoke_llm(
-        [("user", prompt)], temperature=0.1, timeout=15
+    return await invoke_llm_edge_first(
+        [("user", prompt)], temperature=0.1, timeout=15, include_fpga_context=True
     ) or "Unable to assess alerts."
 
 
@@ -79,7 +86,7 @@ async def mandi_agent(message: str, mandi_context: str) -> str:
         "Give specific prices in ₹/quintal."
     )
     prompt = f"{system}\n\nLive Mandi Rates:\n{mandi_context}\n\nQuery: {message}"
-    return await invoke_llm(
+    return await invoke_llm_edge_first(
         [("user", prompt)], temperature=0.2, timeout=20
     ) or "Mandi data unavailable."
 
@@ -91,8 +98,8 @@ async def trend_agent(message: str, sensor_context: str) -> str:
         "Be precise with numbers and time references."
     )
     prompt = f"{system}\n\nData:\n{sensor_context}\n\nQuery: {message}"
-    return await invoke_llm(
-        [("user", prompt)], temperature=0.2, timeout=20
+    return await invoke_llm_edge_first(
+        [("user", prompt)], temperature=0.2, timeout=20, include_fpga_context=True
     ) or "Trend analysis unavailable."
 
 
@@ -102,7 +109,7 @@ async def general_agent(message: str, context: str) -> str:
         "Answer clearly and helpfully. Refer to sensor data when relevant."
     )
     prompt = f"{system}\n\nContext:\n{context}\n\nQuery: {message}"
-    return await invoke_llm(
+    return await invoke_llm_edge_first(
         [("user", prompt)], temperature=0.4, timeout=20
     ) or "I'm unable to respond right now."
 
@@ -116,6 +123,7 @@ async def supervisor(
 ) -> Dict[str, Any]:
     """
     Route the user message to the appropriate specialist agent.
+    All agents run on-device (Arduino Q) first, with cloud fallback.
     Returns: {response, agent, intent}
     """
     intent = detect_intent(message)

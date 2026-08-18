@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy import inspect, text
 
 from skyview.data.db import get_session
-from skyview.utils.llm_pool import invoke_llm
+from skyview.agents.edge_ai_agent import invoke_llm_edge_first
 from skyview.utils.logger import get_logger
 
 router = APIRouter(tags=["Profile"])
@@ -426,7 +426,7 @@ async def scheme_recommendations(
         'JSON array only: [{"name":"PM-KISAN","description":"...","benefit":"...","eligibility":"...","link":"..."}]'
     )
 
-    raw = await invoke_llm([("user", prompt)], temperature=0.3, timeout=15)
+    raw = await invoke_llm_edge_first([("user", prompt)], temperature=0.3, timeout=15)
 
     schemes = []
     if raw:

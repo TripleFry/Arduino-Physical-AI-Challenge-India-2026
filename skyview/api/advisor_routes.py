@@ -11,7 +11,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from skyview.data.queries import get_latest_weather
-from skyview.utils.llm_pool import invoke_llm
+from skyview.agents.edge_ai_agent import invoke_llm_edge_first
 from skyview.utils.logger import get_logger
 
 router = APIRouter(prefix="/api/advisor", tags=["Advisor"])
@@ -95,7 +95,7 @@ async def advisor_insights(req: AdvisorReq):
     prompt = _build_prompt(req.category, sensor)
 
     ai_response = None
-    raw = await invoke_llm([("user", prompt)], temperature=0.4, timeout=15)
+    raw = await invoke_llm_edge_first([("user", prompt)], temperature=0.4, timeout=15)
     if raw:
         try:
             ai_response = json.loads(raw.strip().lstrip("```json").rstrip("```"))

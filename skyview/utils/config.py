@@ -99,7 +99,7 @@ class Settings:
         self.FPGA_PORT: str = os.getenv("FPGA_PORT", "COM4")
         self.ENABLE_LLM_WORKFLOW: bool = os.getenv("ENABLE_LLM_WORKFLOW", "True").lower() == "true"
 
-        # ==================== EDGE AI (Arduino Q) ====================
+        # ==================== ARDUINO Q — AGENTIC AI GATEWAY ====================
         self.ENABLE_EDGE_AI: bool = os.getenv("ENABLE_EDGE_AI", "False").lower() == "true"
         self.ARDUINO_Q_HOST: str = os.getenv("ARDUINO_Q_HOST", "arduinoq.local")
         self.ARDUINO_Q_PORT: int = int(os.getenv("ARDUINO_Q_PORT", "8080"))
@@ -107,6 +107,21 @@ class Settings:
             "EDGE_ALERT_THRESHOLDS",
             '{"soil_moisture_min":15,"temp_max":45,"pm25_max":300,"humidity_min":20}'
         )
+
+        # On-device LLM running on the Qualcomm MPU (OpenAI-compatible API)
+        self.ARDUINO_Q_LLM_ENDPOINT: str = os.getenv(
+            "ARDUINO_Q_LLM_ENDPOINT",
+            "http://arduinoq.local:8080/v1/chat/completions"
+        )
+        self.ARDUINO_Q_LLM_MODEL: str = os.getenv("ARDUINO_Q_LLM_MODEL", "llama-3.2-1b")
+        self.ARDUINO_Q_LLM_TIMEOUT: int = int(os.getenv("ARDUINO_Q_LLM_TIMEOUT", "60"))
+        self.EDGE_AI_FALLBACK_TO_CLOUD: bool = os.getenv(
+            "EDGE_AI_FALLBACK_TO_CLOUD", "True"
+        ).lower() == "true"
+
+        # FPGA (AMD ZYNQ-7000) connects to Arduino Q via UART
+        self.FPGA_UART_PORT: str = os.getenv("FPGA_UART_PORT", "/dev/ttyPS1")
+        self.FPGA_UART_BAUD: int = int(os.getenv("FPGA_UART_BAUD", "115200"))
 
     def get_database_url(self) -> str:
         """Get the database URL, with fallback to SQLite if PostgreSQL is not configured."""

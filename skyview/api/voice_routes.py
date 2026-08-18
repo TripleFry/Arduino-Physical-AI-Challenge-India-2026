@@ -18,7 +18,7 @@ from pydantic import BaseModel, validator
 from skyview.agents.mandi_agent import get_context_string
 from skyview.data.queries import get_latest_weather
 from skyview.utils.config import get_settings
-from skyview.utils.llm_pool import invoke_llm
+from skyview.agents.edge_ai_agent import invoke_llm_edge_first
 from skyview.utils.logger import get_logger
 
 router = APIRouter(tags=["Voice"])
@@ -237,7 +237,7 @@ async def voice_profile_update(req: VoiceProfileReq):
         "Normalize the phone number to a simple 10-digit number string or include country code if present.\n"
         f"Transcript: {req.transcript}"
     )
-    raw = await invoke_llm([("user", prompt)], temperature=0.1, timeout=15)
+    raw = await invoke_llm_edge_first([("user", prompt)], temperature=0.1, timeout=15)
     if not raw:
         return {"status": "error", "message": "LLM unavailable", "identified_fields": {}}
     data = _clean_json(raw)
@@ -298,7 +298,7 @@ async def voice_process(
         "Normalize the phone number to a simple 10-digit number string or include country code if present.\n"
         f"Transcript: {transcript}"
     )
-    raw = await invoke_llm([("user", prompt)], temperature=0.1, timeout=15)
+    raw = await invoke_llm_edge_first([("user", prompt)], temperature=0.1, timeout=15)
     
     if not raw:
         # Fallback parsing in case LLM is unavailable (e.g. no Groq key configured)

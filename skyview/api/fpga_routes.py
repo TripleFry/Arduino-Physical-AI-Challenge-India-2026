@@ -1,10 +1,15 @@
 """
-FPGA Accelerator Routes
-POST /api/fpga/fusion
-POST /api/fpga/rain-predict
-POST /api/fpga/combined-analysis
-POST /api/fpga/test
-GET  /api/fpga/status
+FPGA Hardware Accelerator Routes (AMD ZYNQ-7000)
+
+The FPGA handles sensor fusion and rain prediction via dedicated IP cores.
+Connected to the Arduino Q via UART. The LLM cross-validation of FPGA results
+runs on-device (Arduino Q Qualcomm MPU) first, with cloud Groq as fallback.
+
+POST /api/fpga/fusion           — Sensor fusion computation
+POST /api/fpga/rain-predict     — Rain probability prediction
+POST /api/fpga/combined-analysis — Full combined analysis
+POST /api/fpga/test             — Hardware test suite
+GET  /api/fpga/status           — FPGA hardware status
 """
 
 import json
@@ -14,14 +19,12 @@ from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from skyview.agents.fpga_agent import get_fpga_bridge, is_real_hardware, is_edge_ai
-from skyview.utils.llm_pool import invoke_llm
+from skyview.agents.fpga_agent import get_fpga_bridge, is_real_hardware
+from skyview.agents.edge_ai_agent import invoke_llm_edge_first
 from skyview.utils.logger import get_logger
 
 router = APIRouter(prefix="/api/fpga", tags=["FPGA"])
 logger = get_logger(__name__)
-
-_HW_MODE = lambda: "edge_ai" if is_edge_ai() else "real_hardware"
 
 
 class FusionInput(BaseModel):
@@ -50,6 +53,7 @@ class CombinedInput(BaseModel):
 
 
 async def _llm_validate_fusion(raw: dict, inputs: FusionInput) -> dict:
+    """Cross-validate FPGA sensor fusion output using on-device LLM (Arduino Q)."""
     prompt = (
         f"FPGA Sensor Fusion raw output: {json.dumps(raw)}\n"
         f"Actual readings: Soil={inputs.soil_moisture}%, Temp={inputs.temperature}°C, "
@@ -59,7 +63,7 @@ async def _llm_validate_fusion(raw: dict, inputs: FusionInput) -> dict:
         '"adjusted_alert_level":<0-3>,"alert_name":"<Normal/Moderate/High/Critical>",'
         '"assessment":"<2 sentences>","recommendations":["<tip1>","<tip2>","<tip3>"]}'
     )
-    content = await invoke_llm([("user", prompt)], temperature=0.1, timeout=12)
+    content = await invoke_llm_edge_first([("user", prompt)], temperature=0.1, timeout=12)
     if not content:
         return {}
     try:
@@ -69,6 +73,7 @@ async def _llm_validate_fusion(raw: dict, inputs: FusionInput) -> dict:
 
 
 async def _llm_validate_rain(raw: dict, inputs: RainInput) -> dict:
+    """Cross-validate FPGA rain prediction output using on-device LLM (Arduino Q)."""
     prompt = (
         f"FPGA Rain Prediction raw: {json.dumps(raw)}\n"
         f"Actual: Temp={inputs.temperature}°C, Humidity={inputs.humidity}%, "
@@ -78,7 +83,7 @@ async def _llm_validate_rain(raw: dict, inputs: RainInput) -> dict:
         '"rain_alert":<0or1>,"confidence":"<high/medium/low>",'
         '"recommendation":"<2 sentences>","reasoning":"<1 sentence>"}'
     )
-    content = await invoke_llm([("user", prompt)], temperature=0.1, timeout=12)
+    content = await invoke_llm_edge_first([("user", prompt)], temperature=0.1, timeout=12)
     if not content:
         return {}
     try:
@@ -92,8 +97,9 @@ def fpga_status():
     bridge = get_fpga_bridge()
     return {
         "status": "ok",
-        "hardware_mode": _HW_MODE(),
+        "hardware_mode": "real_fpga" if is_real_hardware() else "simulation",
         "fpga_status": bridge.get_status(),
+        "description": "AMD ZYNQ-7000 FPGA connected to Arduino Q via UART",
         "timestamp": datetime.utcnow().isoformat(),
     }
 
@@ -114,7 +120,8 @@ async def sensor_fusion(data: FusionInput):
         "timestamp":     raw.get("timestamp"),
     }
     return {
-        "status": "success", "hardware_mode": _HW_MODE(),
+        "status": "success",
+        "hardware_mode": "real_fpga" if is_real_hardware() else "simulation",
         "fpga_result": final, "fpga_raw": raw,
         "ai_insights": adjusted.get("assessment", ""),
         "ai_recommendations": adjusted.get("recommendations", []),
@@ -138,7 +145,8 @@ async def rain_predict(data: RainInput):
         "timestamp":        raw.get("timestamp"),
     }
     return {
-        "status": "success", "hardware_mode": _HW_MODE(),
+        "status": "success",
+        "hardware_mode": "real_fpga" if is_real_hardware() else "simulation",
         "prediction": final, "fpga_raw": raw,
         "farmer_recommendation": adjusted.get("recommendation", ""),
         "ai_reasoning": adjusted.get("reasoning", ""),
@@ -170,7 +178,7 @@ async def combined_analysis(data: CombinedInput):
         'Reply JSON: {"overall_risk":"<low/moderate/high/critical>",'
         '"recommendation":"<2-3 sentences>","actions":["<a1>","<a2>","<a3>"]}'
     )
-    rec_raw = await invoke_llm([("user", prompt)], temperature=0.2, timeout=12)
+    rec_raw = await invoke_llm_edge_first([("user", prompt)], temperature=0.2, timeout=12)
     rec = {}
     if rec_raw:
         try:
@@ -179,7 +187,8 @@ async def combined_analysis(data: CombinedInput):
             pass
 
     return {
-        "status": "success", "hardware_mode": _HW_MODE(),
+        "status": "success",
+        "hardware_mode": "real_fpga" if is_real_hardware() else "simulation",
         "sensor_fusion": fs, "rain_prediction": rp,
         "combined_analysis": {
             "overall_risk_level": rec.get("overall_risk", "low"),
@@ -204,4 +213,7 @@ async def fpga_test():
          "output": bridge.send_fusion(c["soil"], c["temp"], c["humid"], c["light"])}
         for c in cases
     ]
-    return {"status": "success", "tests": results, "hardware_mode": _HW_MODE()}
+    return {
+        "status": "success", "tests": results,
+        "hardware_mode": "real_fpga" if is_real_hardware() else "simulation",
+    }

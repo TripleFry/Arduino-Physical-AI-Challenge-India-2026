@@ -32,7 +32,7 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup():
     logger.info("=" * 55)
-    logger.info("🌾 SkyView Backend v2.0 starting…")
+    logger.info("🌾 SkyView Backend v2.0 starting (Arduino Q Agentic AI Gateway)…")
     logger.info("=" * 55)
     logger.info("Groq keys configured: %d", len(settings.GROQ_API_KEYS))
 
@@ -78,7 +78,7 @@ def on_startup():
     except Exception as exc:
         logger.warning("Users table check: %s", exc)
 
-    # Add edge AI columns to weather_data if they don't exist (Arduino Q support)
+    # Add FPGA hardware acceleration columns to weather_data if they don't exist
     try:
         db = get_session()
         for col, col_type in [
@@ -125,7 +125,7 @@ _register("skyview.api.auth_routes")
 # AI / Chat
 _register("skyview.api.chat_routes")
 
-# FPGA accelerator
+# FPGA hardware accelerator (AMD ZYNQ-7000 via UART)
 _register("skyview.api.fpga_routes")
 
 # Farm advisor
@@ -149,7 +149,7 @@ _register("skyview.api.profile_routes")
 # Marketplace matching
 _register("skyview.api.marketplace_routes")
 
-# Edge AI (Arduino Q gateway)
+# Arduino Q Agentic AI Gateway (on-device LLM + FPGA UART bridge)
 _register("skyview.api.edge_routes")
 
 # Admin panel

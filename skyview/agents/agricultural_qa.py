@@ -7,7 +7,7 @@ import json
 import logging
 from typing import Any, Dict, List, Tuple
 
-from skyview.utils.llm_pool import invoke_llm
+from skyview.agents.edge_ai_agent import invoke_llm_edge_first
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ Reply in this JSON format:
   "suggestions": ["<tip 1>", "<tip 2>", "<tip 3>"]}}
 JSON only, no markdown."""
 
-    raw = await invoke_llm([("user", prompt)], temperature=0.3, timeout=25)
+    raw = await invoke_llm_edge_first([("user", prompt)], temperature=0.3, timeout=25)
     if not raw:
         return "Unable to generate a response right now.", []
 

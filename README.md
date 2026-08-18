@@ -1,20 +1,20 @@
 # 🌾 SkyView — Smart Agriculture Platform
 
-An end-to-end intelligent agriculture system for Indian farmers, combining real-time IoT sensing, multi-agent AI, FPGA hardware acceleration, a multilingual React dashboard, and a native Flutter mobile application with voice-first field controls.
+An end-to-end intelligent agriculture system for Indian farmers, combining real-time IoT sensing, on-device agentic AI running on the Arduino Q (Qualcomm MPU), FPGA hardware-accelerated sensor fusion, a multilingual React dashboard, and a native Flutter mobile application with voice-first field controls.
 
-Built for **Google Solution Challenge**.
+Built for **Arduino Physical AI Challenge India 2026**.
 
 ---
 
 ## What It Does
 
-- **Live weather station** — ESP32 sensors (temperature, humidity, soil moisture, UV, PM2.5) transmit via LoRa to an Arduino Q gateway, ingested into PostgreSQL in real time
-- **Edge AI inference** — Arduino Q (Qualcomm MPU + STM32 MCU) runs on-device sensor fusion, anomaly detection, and rain prediction at the gateway, before data reaches the cloud
-- **AI farm advisor** — multi-agent system powered by Groq (Llama 3.1) gives crop recommendations, irrigation schedules, pest alerts, and soil analysis based on live sensor data
+- **Smart weather station** — ESP32 sensors (temperature, humidity, soil moisture, UV, PM2.5) transmit via LoRa to the Arduino UNO Q receiver
+- **Arduino Q — Agentic AI Gateway** — the central hub running on the Qualcomm MPU. Hosts the FastAPI backend, database, frontend, and the entire multi-agent AI workflow on-device using a local LLM. Receives sensor data via LoRa, FPGA results via UART, and orchestrates all decision-making locally
+- **FPGA hardware acceleration** — AMD ZYNQ-7000 FPGA connected to Arduino Q via UART runs dedicated IP cores for sensor fusion and rain prediction with parallel ML inference at hardware speed
+- **On-device agentic AI** — multi-agent system (Weather Agent, Farm Advisor Agent, Alert Agent, Decision Engine) runs entirely on the Arduino Q's Qualcomm MPU, powered by an on-device LLM. Cloud Groq API is fallback only
 - **Mandi rates** — live commodity prices from data.gov.in with 30-minute caching, MSP history, and buyer matching
 - **Multilingual Mobile App** — a cross-platform Flutter application providing field-ready telemetry charts, mandi price lookups, AI advisors, scheme recommendations, and hands-free voice control
 - **Voice interaction** — farmers can call in via Vapi.ai or WhatsApp (Twilio) and get AI responses in Hindi/regional languages via Sarvam AI TTS
-- **FPGA acceleration** — Xilinx ZC706 board runs HLS-synthesized sensor fusion and rain prediction; falls back to edge AI or software simulation
 - **Offline resilience** — Arduino Q buffers sensor data locally during connectivity loss and batch-uploads when back online
 - **Government schemes** — AI-curated scheme recommendations based on farmer profile (land size, location, crops)
 
@@ -191,7 +191,7 @@ Copy `.env.example` to `.env` and fill in:
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DATABASE_URL` | Recommended | PostgreSQL connection string. Falls back to SQLite if unset. |
-| `GROQ_API_KEYS` | Yes (AI features) | Comma-separated Groq API keys for load balancing |
+| `GROQ_API_KEYS` | Fallback only | Comma-separated Groq API keys — used only when Arduino Q on-device LLM is unavailable |
 | `DATAGOV_API_KEY` | Yes (live mandi) | data.gov.in API key (free registration) |
 | `VAPI_AI_API_KEY` | Optional | Vapi.ai key for outbound voice calls |
 | `VAPI_ASSISTANT_ID` | Optional | Vapi assistant ID |
@@ -199,11 +199,17 @@ Copy `.env.example` to `.env` and fill in:
 | `TWILIO_ACCOUNT_SID` | Optional | Twilio SID for WhatsApp integration |
 | `TWILIO_AUTH_TOKEN` | Optional | Twilio auth token |
 | `TWILIO_WHATSAPP_NUMBER` | Optional | Twilio WhatsApp sender number |
-| `ENABLE_FPGA` | No | `True` only when ZC706 board is physically connected |
+| `ENABLE_FPGA` | No | `True` when AMD ZYNQ-7000 FPGA is connected via UART |
 | `FPGA_PORT` | No | Serial port for FPGA bridge (`/dev/ttyUSB0` or `COM4`) |
-| `ENABLE_EDGE_AI` | No | `True` when Arduino Q gateway is connected |
+| `FPGA_UART_PORT` | No | UART port for FPGA on Arduino Q (default: `/dev/ttyPS1`) |
+| `FPGA_UART_BAUD` | No | FPGA UART baud rate (default: `115200`) |
+| `ENABLE_EDGE_AI` | Yes (production) | `True` when running on Arduino Q with on-device LLM |
 | `ARDUINO_Q_HOST` | No | Arduino Q hostname (default: `arduinoq.local`) |
-| `ARDUINO_Q_PORT` | No | Arduino Q status server port (default: `8080`) |
+| `ARDUINO_Q_PORT` | No | Arduino Q server port (default: `8080`) |
+| `ARDUINO_Q_LLM_ENDPOINT` | No | On-device LLM API endpoint (default: `http://arduinoq.local:8080/v1/chat/completions`) |
+| `ARDUINO_Q_LLM_MODEL` | No | Model running on Qualcomm MPU (default: `llama-3.2-1b`) |
+| `ARDUINO_Q_LLM_TIMEOUT` | No | On-device inference timeout in seconds (default: `60`) |
+| `EDGE_AI_FALLBACK_TO_CLOUD` | No | Fall back to cloud Groq when edge LLM fails (default: `True`) |
 | `EDGE_ALERT_THRESHOLDS` | No | JSON thresholds for MCU real-time alerts |
 | `MQTT_BROKER` | No | MQTT broker host (default: `localhost`) |
 | `STATION_ID` | No | Default station ID (default: `WS01`) |
@@ -312,12 +318,13 @@ _register("skyview.api.my_feature_routes")
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Python 3.11, FastAPI, SQLAlchemy 2.0 |
-| AI / LLM | Groq API (Llama 3.1-8b-instant), multi-key load balancing |
+| Backend | Python 3.11, FastAPI, SQLAlchemy 2.0 (runs on Arduino Q) |
+| On-Device AI | Arduino Q (Qualcomm MPU), on-device LLM (Llama 3.2 via llama.cpp) |
+| Cloud AI (Fallback) | Groq API (Llama 3.1-8b-instant), multi-key load balancing |
 | Database | PostgreSQL 16 (production), SQLite (dev fallback) |
 | IoT | ESP32, LoRa, MQTT (Eclipse Mosquitto) |
-| Edge AI Gateway | Arduino Q (Qualcomm MPU + STM32 MCU), TFLite on-device inference |
-| FPGA | Xilinx ZC706, Vivado HLS, Verilog RTL, AXI4-Lite |
+| Agentic AI Gateway | Arduino UNO Q (Qualcomm MPU + STM32 MCU) — central hub |
+| FPGA Accelerator | AMD ZYNQ-7000, sensor fusion & rain prediction IP cores, UART bridge to Arduino Q |
 | Voice | Vapi.ai (calls), Sarvam AI (TTS + translation), Twilio (WhatsApp) |
 | Frontend | React 18, Vite, TypeScript, Tailwind CSS, Recharts |
 | Mobile App | Flutter, Riverpod, Multilingual Chat, Telemetry charts, Voice-first controls |

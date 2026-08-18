@@ -223,3 +223,16 @@ def pool_status() -> Dict[str, Any]:
         ),
         "keys": statuses,
     }
+
+
+# ── Edge-First Convenience Export ─────────────────────────────────────────────
+# All agent code should call invoke_llm_edge_first() instead of invoke_llm().
+# This tries the Arduino Q on-device LLM first, then falls back to cloud Groq.
+
+def get_invoke_llm_edge_first():
+    """
+    Lazy import to avoid circular dependencies.
+    Returns the invoke_llm_edge_first function from edge_ai_agent.
+    """
+    from skyview.agents.edge_ai_agent import invoke_llm_edge_first
+    return invoke_llm_edge_first

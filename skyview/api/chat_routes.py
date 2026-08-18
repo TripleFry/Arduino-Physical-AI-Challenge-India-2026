@@ -16,7 +16,7 @@ from skyview.agents.agricultural_qa import generate_response as qa_generate
 from skyview.data.queries import get_latest_weather, get_weather_history
 from skyview.utils.config import get_settings
 from skyview.utils.logger import get_logger
-from skyview.utils.llm_pool import invoke_llm
+from skyview.agents.edge_ai_agent import invoke_llm_edge_first
 
 router = APIRouter(tags=["AI / Chat"])
 logger = get_logger(__name__)
@@ -89,7 +89,7 @@ async def weather_insight(req: InsightReq):
         f"{req.message}\n\n"
         "Give 5 numbered, plain-text recommendations. No asterisks or markdown."
     )
-    response = await invoke_llm([("user", prompt)], temperature=0.3, timeout=20)
+    response = await invoke_llm_edge_first([("user", prompt)], temperature=0.3, timeout=20)
     return {
         "response": response or "Unable to generate insights.",
         "status": "success",
@@ -317,7 +317,7 @@ async def get_overview(req: OverviewReq):
         f"5. Maintain a helpful, premium, scientific tone."
     )
 
-    response = await invoke_llm([("user", prompt)], temperature=0.3, timeout=20)
+    response = await invoke_llm_edge_first([("user", prompt)], temperature=0.3, timeout=20)
     if not response:
         response = "Unable to load AI Overview at this moment."
 
@@ -350,7 +350,7 @@ async def ask_overview_followup(req: OverviewAskReq):
         f"5. Maintain a polite and helpful farming advisor tone."
     )
 
-    response = await invoke_llm([("user", prompt)], temperature=0.4, timeout=20)
+    response = await invoke_llm_edge_first([("user", prompt)], temperature=0.4, timeout=20)
     if not response:
         response = "I couldn't process your query right now. Please try again."
 

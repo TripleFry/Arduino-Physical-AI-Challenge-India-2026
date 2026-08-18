@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from skyview.data.db import get_session
-from skyview.utils.llm_pool import invoke_llm
+from skyview.agents.edge_ai_agent import invoke_llm_edge_first
 from skyview.utils.logger import get_logger
 from skyview.agents.mandi_agent import fetch_rates
 
@@ -266,7 +266,7 @@ async def marketplace_match(req: MarketplaceMatchReq):
             "Write as a friendly agricultural cooperative advisor. Do not use markdown headings."
         )
         try:
-            advisory_insights = await invoke_llm([("user", prompt)], temperature=0.3, timeout=12)
+            advisory_insights = await invoke_llm_edge_first([("user", prompt)], temperature=0.3, timeout=12)
         except Exception as e:
             advisory_insights = "Match analysis completed. Reach out to local mutual partners on WhatsApp."
 
@@ -416,7 +416,7 @@ async def circular_barter(req: CircularBarterReq):
                     f"Write a 3-sentence sharing plan describing who gets what and when. Use markdown formatting with **bold** for key names and tools. Keep it practical and simple."
                 )
                 try:
-                    res_schedule = await invoke_llm([("user", prompt)], temperature=0.3, timeout=8)
+                    res_schedule = await invoke_llm_edge_first([("user", prompt)], temperature=0.3, timeout=8)
                     if res_schedule:
                         schedule = res_schedule.strip()
                         _llm_cache[cache_key] = schedule
@@ -587,7 +587,7 @@ async def negotiate_deal(req: NegotiateReq):
     )
 
     try:
-        raw_resp = await invoke_llm([("user", prompt)], temperature=0.3, timeout=12)
+        raw_resp = await invoke_llm_edge_first([("user", prompt)], temperature=0.3, timeout=12)
         cleaned = raw_resp.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
         import json
         res_data = json.loads(cleaned)
@@ -701,7 +701,7 @@ async def geographical_pooling():
                 f"3. Pool local labor resources to meet the harvesting requirements of larger farms."
             )
             try:
-                res_plan = await invoke_llm([("user", prompt)], temperature=0.3, timeout=12)
+                res_plan = await invoke_llm_edge_first([("user", prompt)], temperature=0.3, timeout=12)
                 if res_plan:
                     plan = res_plan.strip()
                     _llm_cache[cache_key] = plan

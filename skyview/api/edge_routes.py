@@ -1,9 +1,20 @@
 """
-Edge AI Routes (Arduino Q Gateway)
-GET  /api/edge/status           — Gateway connectivity + status
-GET  /api/edge/health           — Detailed gateway health (uptime, queue, inference)
+Arduino Q Agentic AI Gateway Routes
+
+The Arduino UNO Q (Qualcomm MPU) is the central hub that runs:
+  - The full agentic AI workflow (multi-agent supervisor) on-device
+  - An on-device LLM for decision-making (e.g., Llama 3.2 via llama.cpp)
+  - Data Processing & Routing for all sensor data
+  - Database (sensor data + FPGA results)
+
+The AMD ZYNQ-7000 FPGA connects to the Arduino Q via UART and provides
+hardware-accelerated sensor fusion and rain prediction results.
+
+GET  /api/edge/status           — Agentic AI gateway status (LLM + FPGA)
+GET  /api/edge/health           — Detailed gateway health (LLM, memory, queue)
 GET  /api/edge/data-quality     — Data quality analytics across stations
 POST /api/edge/alert-thresholds — Push alert thresholds to the Arduino Q MCU
+POST /api/edge/chat             — Direct chat with Arduino Q on-device LLM
 """
 
 import json
@@ -14,11 +25,15 @@ import httpx
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from skyview.agents.edge_ai_agent import (
+    get_edge_ai_status,
+    invoke_edge_llm,
+)
 from skyview.data.db import execute_query
 from skyview.utils.config import get_settings
 from skyview.utils.logger import get_logger
 
-router = APIRouter(prefix="/api/edge", tags=["Edge AI"])
+router = APIRouter(prefix="/api/edge", tags=["Arduino Q Agentic AI"])
 logger = get_logger(__name__)
 settings = get_settings()
 
@@ -36,31 +51,22 @@ class AlertThresholds(BaseModel):
     wind_speed_max: Optional[float] = None
 
 
+class EdgeChatReq(BaseModel):
+    message: str
+    temperature: float = 0.3
+
+
 @router.get("/status")
 async def edge_status():
     """
-    Check Arduino Q gateway connectivity.
-    Attempts to reach the gateway's local status endpoint.
+    Arduino Q Agentic AI Gateway status.
+    Reports on-device LLM availability, FPGA UART connectivity,
+    and cloud fallback configuration.
     """
-    gateway_reachable = False
-    gateway_info = {}
-
-    if settings.ENABLE_EDGE_AI:
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(_gateway_url("/status"))
-                if resp.status_code == 200:
-                    gateway_reachable = True
-                    gateway_info = resp.json()
-        except Exception as exc:
-            logger.warning("Arduino Q gateway unreachable: %s", exc)
-
+    status = await get_edge_ai_status()
     return {
         "status": "ok",
-        "edge_ai_enabled": settings.ENABLE_EDGE_AI,
-        "gateway_host": settings.ARDUINO_Q_HOST,
-        "gateway_reachable": gateway_reachable,
-        "gateway_info": gateway_info,
+        **status,
         "timestamp": datetime.utcnow().isoformat(),
     }
 
@@ -68,13 +74,13 @@ async def edge_status():
 @router.get("/health")
 async def edge_health():
     """
-    Detailed gateway health: uptime, LoRa stats, queue depth, inference metrics.
-    Proxies to the Arduino Q's /health endpoint.
+    Detailed gateway health: on-device LLM model info, FPGA UART status,
+    LoRa stats, queue depth, and inference metrics.
     """
     if not settings.ENABLE_EDGE_AI:
         return {
             "status": "disabled",
-            "message": "Edge AI is not enabled. Set ENABLE_EDGE_AI=True.",
+            "message": "Arduino Q Agentic AI is not enabled. Set ENABLE_EDGE_AI=True.",
             "timestamp": datetime.utcnow().isoformat(),
         }
 
@@ -82,9 +88,11 @@ async def edge_health():
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(_gateway_url("/health"))
             if resp.status_code == 200:
+                health_data = resp.json()
                 return {
                     "status": "ok",
-                    "gateway_health": resp.json(),
+                    "gateway_health": health_data,
+                    "description": "Arduino Q running agentic AI on Qualcomm MPU, FPGA via UART",
                     "timestamp": datetime.utcnow().isoformat(),
                 }
             return {
@@ -100,11 +108,39 @@ async def edge_health():
         }
 
 
+@router.post("/chat")
+async def edge_chat(req: EdgeChatReq):
+    """
+    Send a chat message directly to the Arduino Q's on-device LLM.
+    Useful for testing the Qualcomm MPU inference capability.
+    Does NOT fall back to cloud — this tests the edge LLM directly.
+    """
+    if not settings.ENABLE_EDGE_AI:
+        return {
+            "status": "disabled",
+            "message": "Arduino Q Agentic AI is not enabled. Set ENABLE_EDGE_AI=True.",
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+    response = await invoke_edge_llm(
+        [("user", req.message)],
+        temperature=req.temperature,
+    )
+
+    return {
+        "status": "success" if response else "error",
+        "response": response or "On-device LLM did not return a response.",
+        "model": settings.ARDUINO_Q_LLM_MODEL,
+        "source": "arduino_q_on_device",
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+
 @router.get("/data-quality")
 def edge_data_quality(station_id: Optional[str] = None, hours: int = 24):
     """
     Data quality analytics — counts readings by quality level,
-    average anomaly scores, and flagged sensor breakdown.
+    average FPGA fusion scores, and flagged sensor breakdown.
     """
     where_clause = "WHERE timestamp >= NOW() - INTERVAL ':hours hours'"
     params = {"hours": hours}
@@ -132,28 +168,28 @@ def edge_data_quality(station_id: Optional[str] = None, hours: int = 24):
         quality_dist[q] = c
         total += c
 
-    # Average edge metrics
+    # Average FPGA-sourced metrics
     edge_rows = execute_query(
         f"""
         SELECT
             AVG(edge_anomaly_score) as avg_anomaly,
             AVG(edge_fusion_score) as avg_fusion,
             AVG(edge_inference_ms) as avg_inference_ms,
-            COUNT(CASE WHEN edge_fusion_score IS NOT NULL THEN 1 END) as edge_ai_count
+            COUNT(CASE WHEN edge_fusion_score IS NOT NULL THEN 1 END) as fpga_processed_count
         FROM weather_data
         {where_clause}
         """,
         params,
     )
 
-    edge_stats = {}
+    fpga_stats = {}
     if edge_rows and edge_rows[0]:
         r = edge_rows[0]
-        edge_stats = {
+        fpga_stats = {
             "avg_anomaly_score": round(float(r[0]), 3) if r[0] else None,
             "avg_fusion_score": round(float(r[1]), 1) if r[1] else None,
             "avg_inference_ms": round(float(r[2]), 1) if r[2] else None,
-            "readings_with_edge_ai": r[3] or 0,
+            "readings_with_fpga_results": r[3] or 0,
         }
 
     return {
@@ -162,7 +198,7 @@ def edge_data_quality(station_id: Optional[str] = None, hours: int = 24):
         "station_id": station_id or "all",
         "total_readings": total,
         "quality_distribution": quality_dist,
-        "edge_ai_stats": edge_stats,
+        "fpga_accelerator_stats": fpga_stats,
         "timestamp": datetime.utcnow().isoformat(),
     }
 
@@ -178,7 +214,7 @@ async def push_alert_thresholds(thresholds: AlertThresholds):
     if not settings.ENABLE_EDGE_AI:
         return {
             "status": "stored_locally",
-            "message": "Edge AI disabled; thresholds saved but not pushed to device.",
+            "message": "Arduino Q not enabled; thresholds saved but not pushed to device.",
             "thresholds": payload,
             "timestamp": datetime.utcnow().isoformat(),
         }

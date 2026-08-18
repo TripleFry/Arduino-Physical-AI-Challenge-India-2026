@@ -1,4 +1,4 @@
-# 🌾 SkyView — Smart Agriculture Platform
+# 🌾 SkyView AI — Smart Agriculture Platform
 
 An end-to-end intelligent agriculture system for Indian farmers, combining real-time IoT sensing, on-device agentic AI running on the Arduino Q (Qualcomm MPU), FPGA hardware-accelerated sensor fusion, a multilingual React dashboard, and a native Flutter mobile application with voice-first field controls.
 

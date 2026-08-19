@@ -346,4 +346,4 @@ For setup, architecture, and developer best practices, refer to the [Mobile App 
 
 ## License
 
-Google Solution Challenge project. MIT License.
+Arduino Physical AI Challenge India 2026. MIT License.
